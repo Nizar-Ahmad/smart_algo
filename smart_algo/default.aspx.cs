@@ -419,6 +419,117 @@ namespace WebApp
             }
         }
 
+        // GA & Evaluation
+        private class GAResult
+        {
+            public double Score;
+            public int[] SelectedFeatureIdxs; // indices relative to X columns
+            public long TimeMs;
+        }
+
+        private GAResult RunGA(int D, int pop, int gens, int kfolds, int knnK, double lambda, int[] globalFeatIdxs)
+        {
+            // individuals: bool[D]
+            var population = new List<bool[]>();
+            for (int i = 0; i < pop; i++) population.Add(RandomMask(D));
+
+            bool[] bestMask = null;
+            double bestFit = double.NegativeInfinity;
+            var sw = Stopwatch.StartNew();
+
+            for (int g = 0; g < gens; g++)
+            {
+                List<ScoredMask> scored = population.Select(m =>
+                {
+                    int[] subset = MaskToIdxs(m, globalFeatIdxs);
+                    if (subset.Length == 0) subset = new[] { globalFeatIdxs[rnd.Next(globalFeatIdxs.Length)] };
+
+                    double perf = EvaluateSubset(subset, kfolds, knnK);
+                    double penalty = lambda * (subset.Length / (double)globalFeatIdxs.Length);
+                    double fitness = perf - penalty;
+
+                    return new ScoredMask { m = m, fitness = fitness };
+                })
+                .OrderByDescending(x => x.fitness)
+                .ToList();
+
+                if (scored[0].fitness > bestFit)
+                {
+                    bestFit = scored[0].fitness;
+                    bestMask = (bool[])scored[0].m.Clone();
+                }
+
+                var newPop = new List<bool[]>();
+                newPop.Add((bool[])scored[0].m.Clone());
+                if (pop > 1) newPop.Add((bool[])scored[1].m.Clone());
+
+                while (newPop.Count < pop)
+                {
+                    var p1 = Tournament(scored);
+                    var p2 = Tournament(scored);
+                    var (c1, c2) = Crossover(p1, p2);
+                    newPop.Add(Mutate(c1, 0.015));
+                    if (newPop.Count < pop) newPop.Add(Mutate(c2, 0.015));
+                }
+                population = newPop;
+            }
+
+            sw.Stop();
+
+            var bestIdxs = MaskToIdxs(bestMask, globalFeatIdxs);
+            if (bestIdxs.Length == 0) bestIdxs = new[] { globalFeatIdxs[rnd.Next(globalFeatIdxs.Length)] };
+            double bestScore = EvaluateSubset(bestIdxs, kfolds, knnK);
+
+            return new GAResult
+            {
+                Score = bestScore,
+                SelectedFeatureIdxs = bestIdxs,
+                TimeMs = sw.ElapsedMilliseconds
+            };
+        }
+
+        private bool[] RandomMask(int D)
+        {
+            var m = new bool[D];
+            for (int i = 0; i < D; i++) m[i] = rnd.NextDouble() < 0.5;
+            if (!m.Any(b => b)) m[rnd.Next(D)] = true;
+            return m;
+        }
+        private bool[] Tournament(List<ScoredMask> scored)
+        {
+            int i1 = rnd.Next(scored.Count), i2 = rnd.Next(scored.Count);
+            var winner = (scored[i1].fitness > scored[i2].fitness) ? scored[i1].m : scored[i2].m;
+            return (bool[])winner.Clone();
+        }
+
+        private (bool[], bool[]) Crossover(bool[] a, bool[] b)
+        {
+            int D = a.Length;
+            int p = rnd.Next(1, D);
+            var c1 = new bool[D];
+            var c2 = new bool[D];
+            for (int i = 0; i < D; i++)
+            {
+                if (i < p) { c1[i] = a[i]; c2[i] = b[i]; }
+                else { c1[i] = b[i]; c2[i] = a[i]; }
+            }
+            return (c1, c2);
+        }
+        private bool[] Mutate(bool[] m, double rate)
+        {
+            var r = (bool[])m.Clone();
+            for (int i = 0; i < r.Length; i++)
+                if (rnd.NextDouble() < rate) r[i] = !r[i];
+            if (!r.Any(x => x)) r[rnd.Next(r.Length)] = true;
+            return r;
+        }
+        private static int[] MaskToIdxs(bool[] mask, int[] globalIdx)
+        {
+            var list = new List<int>();
+            for (int i = 0; i < mask.Length; i++) if (mask[i]) list.Add(globalIdx[i]);
+            return list.ToArray();
+        }
+
 
     }
 }
