@@ -145,6 +145,40 @@
     </div>
   </div>
 
+  <!-- Results & Charts -->
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="chart-wrap">
+        <h6 class="mb-2"><i class="fa-solid fa-chart-column me-1"></i> مقارنة الأداء</h6>
+        <canvas id="cmpChart" height="240"></canvas>
+        <small class="text-muted d-block mt-1">Baseline-All vs. Univariate Top-K vs. GA</small>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-wrap">
+        <h6 class="mb-2"><i class="fa-solid fa-chart-simple me-1"></i> أعلى الميزات (GA)</h6>
+        <canvas id="featChart" height="240"></canvas>
+        <small class="text-muted d-block mt-1">أكثر 20 ميزة ظهرت في مجموعة GA.</small>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card p-3">
+        <h6 class="mb-2"><i class="fa-solid fa-list-check me-1"></i> تفاصيل النتائج</h6>
+        <asp:Literal ID="litResult" runat="server" />
+        <!-- يتم حقن سكربتات الرسوم من الخلفية في هذا اللترال -->
+        <asp:Literal ID="litCharts" runat="server" />
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card p-3">
+        <h6 class="mb-2"><i class="fa-regular fa-clock me-1"></i> السجل</h6>
+        <asp:Literal ID="litHistory" runat="server" />
+      </div>
+    </div>
+  </div>
+
 </form>
 
 <!-- Bootstrap JS -->
