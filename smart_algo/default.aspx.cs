@@ -799,5 +799,66 @@ namespace WebApp
         }
 
 
+        private static List<string> SplitCsvLine(string line)
+        {
+            return line.Split(new[] { ',', ';', '\t' }, StringSplitOptions.None)
+                       .Select(s => s.Trim()).ToList();
+        }
+        private static bool IsNumeric(string s) => TryParseDouble(s, out _);
+        private static bool TryParseDouble(string s, out double v)
+        {
+            return double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out v)
+                || double.TryParse(s, NumberStyles.Any, CultureInfo.GetCultureInfo("en-US"), out v)
+                || double.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out v);
+        }
+        private static double ParseDoubleSafe(string s)
+        {
+            if (TryParseDouble(s, out double v)) return v;
+            return 0;
+        }
+        private static int ParseInt(string s, int def, int min, int max)
+        {
+            if (!int.TryParse(s, out int v)) v = def;
+            return Math.Min(max, Math.Max(min, v));
+        }
+        private static double ParseDouble(string s, double def, double min, double max)
+        {
+            if (!TryParseDouble(s, out double v)) v = def;
+            return Math.Min(max, Math.Max(min, v));
+        }
+        private static double[][] Standardize(double[][] X, out double[] means, out double[] stds)
+        {
+            int n = X.Length, d = X[0].Length;
+            means = new double[d]; stds = new double[d];
+            var Y = new double[n][];
+            for (int j = 0; j < d; j++)
+            {
+                double m = 0;
+                for (int i = 0; i < n; i++) m += X[i][j];
+                m /= n;
+                double s2 = 0;
+                for (int i = 0; i < n; i++) { double dx = X[i][j] - m; s2 += dx * dx; }
+                double sd = Math.Sqrt(s2 / Math.Max(1, n - 1));
+                if (sd <= 1e-12) sd = 1;
+                means[j] = m; stds[j] = sd;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                Y[i] = new double[d];
+                for (int j = 0; j < d; j++) Y[i][j] = (X[i][j] - means[j]) / stds[j];
+            }
+            return Y;
+        }
+        private static double NextGaussian(double mu, double sigma)
+        {
+            double u1 = 1.0 - rnd.NextDouble();
+            double u2 = 1.0 - rnd.NextDouble();
+            double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+            return mu + sigma * randStdNormal;
+        }
+        private static string JavaScriptStringEncode(string s)
+        {
+            return s.Replace("\\", "\\\\").Replace("'", "\\'");
+        }
     }
 }
