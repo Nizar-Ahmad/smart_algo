@@ -687,6 +687,117 @@ namespace WebApp
             return Math.Sqrt(s / Math.Max(1, a.Length - 1));
         }
 
+        // Rendering
+        private void RenderResultTables(
+            int[] allIdxs, double allScore, long allMs,
+            int[] topIdxs, double topScore, long topMs,
+            GAResult ga, int targetCol)
+        {
+            string fmt = IsClassification ? "دقة (Accuracy)" : "مقياس (1/(1+RMSE))";
+            string rows = $@"
+<tr><td>Baseline (كل الميزات)</td><td>{allIdxs.Length}</td><td>{allScore:0.000}</td><td>{allMs} ms</td></tr>
+<tr><td>Univariate Top-K</td><td>{topIdxs.Length}</td><td>{topScore:0.000}</td><td>{topMs} ms</td></tr>
+<tr class='table-success'><td>Genetic Algorithm (GA)</td><td>{ga.SelectedFeatureIdxs.Length}</td><td><b>{ga.Score:0.000}</b></td><td>{ga.TimeMs} ms</td></tr>";
+
+            string table = $@"
+<div class='table-responsive mb-3'>
+  <table class='table table-sm table-bordered align-middle'>
+    <thead class='table-light'>
+      <tr><th>الطريقة</th><th>#ميزات</th><th>{fmt}</th><th>الزمن</th></tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>";
+
+            // تفاصيل الميزات المختارة
+            var chosen = ga.SelectedFeatureIdxs.Select(i => Headers[i]).ToArray();
+            string pills = string.Join("", chosen.Take(100).Select(n =>
+                $"<span class='badge bg-primary-subtle text-primary border border-primary me-1 mb-1'>{Server.HtmlEncode(n)}</span>"));
+
+            litResult.Text = table + $@"
+<div class='mb-2'><b>الميزات المختارة (GA):</b></div>
+<div>{pills}</div>";
+        }
+
+        private void RenderCharts(double scoreAll, double scoreTop, double scoreGa, string[] gaFeatures)
+        {
+            var cmpLabels = "['Baseline-All','Top-K','GA']";
+            var cmpValues = $"[{scoreAll.ToString("0.000", CultureInfo.InvariantCulture)},{scoreTop.ToString("0.000", CultureInfo.InvariantCulture)},{scoreGa.ToString("0.000", CultureInfo.InvariantCulture)}]";
+
+            // ميزات GA (نأخذ حتى 20)
+            var featLabels = "[" + string.Join(",", gaFeatures.Take(20).Select(n => $"'{JavaScriptStringEncode(n)}'")) + "]";
+            var featVals = "[" + string.Join(",", Enumerable.Repeat(1, Math.Min(20, gaFeatures.Length))) + "]"; // مجرد تمييز بصري
+
+            litCharts.Text = $@"
+<script>
+(() => {{
+  // KPIs DOM update
+  document.getElementById('kpiBestScore').textContent = '{scoreGa.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)}';
+
+  const c1 = document.getElementById('cmpChart');
+  if (c1) {{
+    new Chart(c1, {{
+      type: 'bar',
+      data: {{
+        labels: {cmpLabels},
+        datasets: [{{ label: '{(IsClassification ? "Accuracy" : "1/(1+RMSE)")}', data: {cmpValues} }}]
+      }},
+      options: {{ responsive: true, scales: {{ y: {{ beginAtZero: true }} }} }}
+    }});
+  }}
+  const c2 = document.getElementById('featChart');
+  if (c2) {{
+    new Chart(c2, {{
+      type: 'bar',
+      data: {{
+        labels: {featLabels},
+        datasets: [{{ label: 'Selected by GA', data: {featVals} }}]
+      }},
+      options: {{ responsive: true, plugins: {{ legend: {{ display:false }} }}, scales: {{ y: {{ beginAtZero: true, ticks: {{ stepSize: 1 }} }} }} }}
+    }});
+  }}
+}})();
+</script>";
+        }
+
+        private void PushKpi(string samples, string feats, string bestScore, string gaCount)
+        {
+            litCharts.Text += $@"
+<script>
+(() => {{
+  const set = (id,val) => {{ var el=document.getElementById(id); if(el) el.textContent = val; }};
+  set('kpiSamples','{samples}');
+  set('kpiFeatures','{feats}');
+  set('kpiBestScore','{bestScore}');
+  set('kpiGaCount','{gaCount}');
+}})();
+</script>";
+        }
+
+        private void AppendHistory(string problem, double scoreAll, double scoreTop, double scoreGa, int gaCount)
+        {
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string row = $@"<tr>
+<td>{now}</td><td>{problem}</td>
+<td>{scoreAll:0.000}</td><td>{scoreTop:0.000}</td><td><b>{scoreGa:0.000}</b></td><td>{gaCount}</td>
+</tr>";
+
+            string current = litHistory.Text;
+            if (!current.Contains("<table"))
+            {
+                litHistory.Text = $@"
+<div class='table-responsive'>
+<table class='table table-sm table-striped'>
+<thead class='table-light'>
+<tr><th>التاريخ</th><th>نوع المهمة</th><th>Baseline</th><th>Top-K</th><th>GA</th><th>#ميزات GA</th></tr>
+</thead><tbody>{row}</tbody></table></div>";
+            }
+            else
+            {
+                litHistory.Text = current.Replace("</tbody>", row + "</tbody>");
+            }
+        }
+
 
     }
 }
