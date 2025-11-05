@@ -530,6 +530,163 @@ namespace WebApp
             return list.ToArray();
         }
 
+        //  Evaluation with kNN + KFold 
+        private double EvaluateSubset(int[] featIdxs, int kfolds, int knnK)
+        {
+            // اختر الأعمدة من X
+            var Xsub = Project(X, featIdxs);
+            // KFold
+            int n = Xsub.Length;
+            var idx = Enumerable.Range(0, n).OrderBy(_ => rnd.Next()).ToArray();
+            int foldSize = Math.Max(1, n / kfolds);
+            var scores = new List<double>();
+            for (int f = 0; f < kfolds; f++)
+            {
+                int start = f * foldSize;
+                int end = (f == kfolds - 1) ? n : Math.Min(n, start + foldSize);
+                var testIdx = idx.Skip(start).Take(end - start).ToArray();
+                var trainIdx = idx.Except(testIdx).ToArray();
+
+                var Xtr = trainIdx.Select(i => Xsub[i]).ToArray();
+                var ytr = trainIdx.Select(i => y[i]).ToArray();
+                var Xte = testIdx.Select(i => Xsub[i]).ToArray();
+                var yte = testIdx.Select(i => y[i]).ToArray();
+
+                if (IsClassification)
+                {
+                    int correct = 0;
+                    for (int i = 0; i < Xte.Length; i++)
+                    {
+                        double pred = KnnPredictCls(Xtr, ytr, Xte[i], knnK);
+                        if (Math.Abs(pred - yte[i]) < 1e-9) correct++;
+                    }
+                    scores.Add(correct / (double)Xte.Length);
+                }
+                else
+                {
+                    double sse = 0;
+                    for (int i = 0; i < Xte.Length; i++)
+                    {
+                        double pred = KnnPredictReg(Xtr, ytr, Xte[i], knnK);
+                        double err = pred - yte[i];
+                        sse += err * err;
+                    }
+                    double rmse = Math.Sqrt(sse / Xte.Length);
+                    scores.Add(1.0 / (1.0 + rmse)); // maximize
+                }
+            }
+            return scores.Average();
+        }
+
+        private static double KnnPredictCls(double[][] Xtr, double[] ytr, double[] x, int k)
+        {
+            var d = new List<(double dist, int idx)>();
+            for (int i = 0; i < Xtr.Length; i++)
+                d.Add((Dist2(Xtr[i], x), i));
+            var top = d.OrderBy(t => t.dist).Take(k).ToArray();
+            // تصويت الأكثرية
+            return top.GroupBy(t => ytr[t.idx])
+                      .OrderByDescending(g => g.Count())
+                      .First().Key;
+        }
+        private static double KnnPredictReg(double[][] Xtr, double[] ytr, double[] x, int k)
+        {
+            var d = new List<(double dist, int idx)>();
+            for (int i = 0; i < Xtr.Length; i++)
+                d.Add((Dist2(Xtr[i], x), i));
+            var top = d.OrderBy(t => t.dist).Take(k).ToArray();
+            return top.Select(t => ytr[t.idx]).Average();
+        }
+        private static double Dist2(double[] a, double[] b)
+        {
+            double s = 0;
+            for (int i = 0; i < a.Length; i++)
+            {
+                double dx = a[i] - b[i];
+                s += dx * dx;
+            }
+            return s;
+        }
+
+        private static double[][] Project(double[][] X, int[] cols)
+        {
+            int n = X.Length, d = cols.Length;
+            var Y = new double[n][];
+            for (int i = 0; i < n; i++)
+            {
+                Y[i] = new double[d];
+                for (int j = 0; j < d; j++) Y[i][j] = X[i][cols[j]];
+            }
+            return Y;
+        }
+
+        //  Univariate Top-K
+        private int[] UnivariateTopK(int[] featIdxs, int K)
+        {
+            // تصنيف: point-biserial إذا ثنائي، وإلا Pearson مع ترميز الأهداف
+            bool binary = IsClassification && y.Distinct().Count() == 2;
+
+            var scores = new List<(int idx, double sc)>();
+            foreach (var fi in featIdxs)
+            {
+                var col = X.Select(r => r[fi]).ToArray();
+                double sc;
+                if (!IsClassification)
+                {
+                    sc = Math.Abs(Pearson(col, y));
+                }
+                else if (binary)
+                {
+                    sc = Math.Abs(PointBiserial(col, y)); // y=0/1 مثالي، وإن كانت غير 0/1 فالمقياس ما يزال يعمل
+                }
+                else
+                {
+                    sc = Math.Abs(Pearson(col, y)); // fallback
+                }
+                if (double.IsNaN(sc)) sc = 0;
+                scores.Add((fi, sc));
+            }
+
+            return scores.OrderByDescending(s => s.sc).Take(Math.Min(K, scores.Count)).Select(s => s.idx).ToArray();
+        }
+
+        // Pearson correlation
+        private static double Pearson(double[] a, double[] b)
+        {
+            double ma = a.Average(), mb = b.Average();
+            double num = 0, da = 0, db = 0;
+            for (int i = 0; i < a.Length; i++)
+            {
+                double xa = a[i] - ma, xb = b[i] - mb;
+                num += xa * xb;
+                da += xa * xa;
+                db += xb * xb;
+            }
+            double den = Math.Sqrt(da * db);
+            if (den <= 1e-12) return 0;
+            return num / den;
+        }
+        // Point-biserial (y ثنائي)
+        private static double PointBiserial(double[] x, double[] y)
+        {
+            // y يفترض قيمتين، قد تكون 0/1 أو قيم أخرى — نقسم حسب أول قيمة
+            var c0 = y[0];
+            var g1 = x.Where((_, i) => Math.Abs(y[i] - c0) < 1e-9).ToArray();
+            var g2 = x.Where((_, i) => Math.Abs(y[i] - c0) >= 1e-9).ToArray();
+            if (g1.Length == 0 || g2.Length == 0) return 0;
+            double m1 = g1.Average(), m2 = g2.Average();
+            double s = Std(x);
+            if (s <= 1e-12) return 0;
+            double p = g1.Length / (double)x.Length, q = 1 - p;
+            return ((m1 - m2) / s) * Math.Sqrt(p * q);
+        }
+        private static double Std(double[] a)
+        {
+            double m = a.Average(), s = 0;
+            for (int i = 0; i < a.Length; i++) { double d = a[i] - m; s += d * d; }
+            return Math.Sqrt(s / Math.Max(1, a.Length - 1));
+        }
+
 
     }
 }
