@@ -290,6 +290,10 @@ namespace WebApp
                           scoreAll, scoreTop, gaRes.Score, gaRes.SelectedFeatureIdxs.Length);
         }
 
+        // =========================================================
+        // Part 2/6: Build X/y + infer problem type
+        // =========================================================
+
         //Build X / y
         private void BuildXYFromLines(List<string> lines, int targetCol)
         {
@@ -418,6 +422,7 @@ namespace WebApp
                 return (true, map, enc);
             }
         }
+
 
     }
 }
