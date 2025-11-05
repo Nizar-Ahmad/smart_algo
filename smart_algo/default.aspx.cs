@@ -419,6 +419,7 @@ namespace WebApp
             }
         }
 
+
         // GA & Evaluation
         private class GAResult
         {
@@ -686,6 +687,7 @@ namespace WebApp
             for (int i = 0; i < a.Length; i++) { double d = a[i] - m; s += d * d; }
             return Math.Sqrt(s / Math.Max(1, a.Length - 1));
         }
+
 
         // Rendering
         private void RenderResultTables(
